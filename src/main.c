@@ -142,11 +142,65 @@ int main(void) {
 	while (!quit) {
 		if (fgets(buf,256,inStream)) {
 			cmd = buf[0];
-			switch (cmd) {
-			// TODO: add every command treatment, think about using sscanf on buf to extract arguments
-			default:
-				printf("Unrecognized command: %s\n", buf);
-			}
+            switch (cmd) {
+                case 'q':
+                    printf("Received command: quit\n");
+                    quit = 1;
+                    break;
+                case 'p': {
+                    int power;
+                    if (sscanf(buf + 1, "%d", &power) == 1) {
+                        printf("Received command: set power to %d\n", power);
+                    } else {
+                        printf("Invalid power command: %s\n", buf);
+                    }
+                    break;
+                }
+                case 'r': {
+                    int x, y, a;
+                    if (sscanf(buf + 1, "%d %d %d", &x, &y, &a) == 3) {
+                        printf("Received command: reset to (%d, %d, %d)\n", x, y, a);
+                    } else {
+                        printf("Invalid reset command: %s\n", buf);
+                    }
+                    break;
+                }
+                case 'm': {
+                    int mode;
+                    if (sscanf(buf + 1, "%d", &mode) == 1) {
+                        printf("Received command: set mode to %d\n", mode);
+                    } else {
+                        printf("Invalid mode command: %s\n", buf);
+                    }
+                    break;
+                }
+                case 'S':
+                    printf("Received command: stop\n");
+                    break;
+                case 'F':
+                    printf("Received command: forward\n");
+                    break;
+                case 'B':
+                    printf("Received command: backward\n");
+                    break;
+                case 'L':
+                    printf("Received command: left\n");
+                    break;
+                case 'R':
+                    printf("Received command: right\n");
+                    break;
+                case 'g': {
+                    int x, y;
+                    if (sscanf(buf + 1, "%d %d", &x, &y) == 2) {
+                        printf("Received command: goto (%d, %d)\n", x, y);
+                    } else {
+                        printf("Invalid goto command: %s\n", buf);
+                    }
+                    break;
+                }
+                default:
+                    printf("Unrecognized command: %s\n", buf);
+            }
 		} else {
 			// Connection closed
 			quit = 1;
