@@ -29,18 +29,20 @@ volatile MDD_int MDD_auto_command;
 volatile MDD_int MDD_direct_command;
 volatile MDD_generic MDD_target;
 volatile MDD_generic MDD_reset;
+volatile MDD_generic MDD_position;
+volatile MDD_int MDD_status;
 volatile bal_t bal;
 
-typedef struct s_reset_position {
+typedef struct s_position {
     int x;
     int y;
     int a;
-} *reset_position;
+} position, *pPosition;
 
 typedef struct s_target_position {
     int x;
     int y;
-} *target_position;
+} target_position, *pTarget_position;
 
 
 /**
@@ -52,7 +54,9 @@ void init_comms() {
     MDD_auto_command = MDD_int_init(0);
     MDD_direct_command = MDD_int_init(0);
     MDD_target = MDD_generic_init(sizeof(struct s_target_position));
-    MDD_reset = MDD_generic_init(sizeof(struct s_reset_position));
+    MDD_reset = MDD_generic_init(sizeof(struct s_position));
+    MDD_position = MDD_generic_init(sizeof(struct s_position));
+    MDD_status = MDD_int_init(0);
     bal = bal_create();
 }
 
@@ -129,23 +133,24 @@ int autoMoveWorker(int x, int y) {
  * This thread should end when the application quits, and fclose the outStream socket
  */
 void *sendThread(void *arg) {
-    FILE *outStream = (FILE *)arg; // Reconversion du pointeur
-    int x = 0, y = 0, a = 0;
-    int status = 0;
-    struct timespec horloge;
-    clock_gettime(CLOCK_REALTIME, &horloge);
-
-    while (!MDD_int_read(MDD_quit)) {
-        status = get_robot_status();
-        get_robot_position(&x, &y, &a);
-        fprintf(outStream, "s %d\n", status);
-        fprintf(outStream, "p %d %d %d\n", x, y, a);
-        fflush(outStream);
-        add_ms(&horloge, 200);
-        clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &horloge, 0);
-    }
-    fclose(outStream);
-    return NULL;
+//    FILE *outStream = (FILE *)arg; // Reconversion du pointeur
+//    int x = 0, y = 0, a = 0;
+//    int status = 0;
+//    struct timespec horloge;
+//    clock_gettime(CLOCK_REALTIME, &horloge);
+//
+//    while (!MDD_int_read(MDD_quit)) {
+//        status = MDD_int_read(MDD_status);
+////        status = get_robot_status();
+//        get_robot_position(&x, &y, &a);
+//        fprintf(outStream, "s %d\n", status);
+//        fprintf(outStream, "p %d %d %d\n", x, y, a);
+//        fflush(outStream);
+//        add_ms(&horloge, 200);
+//        clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &horloge, 0);
+//    }
+//    fclose(outStream);
+//    return NULL;
 }
 
 
@@ -158,43 +163,55 @@ void *sendThread(void *arg) {
  * set_tacho_command_inx (for commands TACHO_STOP and TACHO_RUN_DIRECT),
  * set_tacho_duty_cycle_sp in order to configure the power between -100 and 100
  */
-void *directThread(void *dummy) {
-    int command = 0;
-    while (!MDD_int_read(MDD_quit)) {
-        command = MDD_int_read(MDD_direct_command);
-        switch (command) {
-            case 0: // Stop
-                set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_STOP);
-                set_tacho_command_inx(MY_LEFT_TACHO, TACHO_STOP);
+void *directThread(void *dummy)
+{
+
+    printf("Direct thread started\n");
+    int command = 1;
+
+    while(!MDD_int_read(MDD_quit))
+    {
+        printf("Waiting for direct command\n");
+        command = bal_get(bal);
+        //command = MDD_int_read(MDD_direct_command);
+        printf("Direct command received: %d\n", command);
+
+        int power = MDD_int_read(MDD_power);
+        switch (command)
+        {
+            case CMD_STOP:
+                //set_tacho_command_inx(MY_LEFT_TACHO,TACHO_STOP);
+                //set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_STOP);
                 break;
-            case 1: // Forward
-                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, MDD_int_read(MDD_power));
-                set_tacho_duty_cycle_sp(MY_LEFT_TACHO, MDD_int_read(MDD_power));
-                set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_RUN_DIRECT);
-                set_tacho_command_inx(MY_LEFT_TACHO, TACHO_RUN_DIRECT);
+            case CMD_FORWARD:
+                set_tacho_command_inx(MY_LEFT_TACHO,TACHO_RUN_DIRECT);
+                set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_RUN_DIRECT);
+                set_tacho_duty_cycle_sp(MY_LEFT_TACHO,power);
+                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO,power);
                 break;
-            case 2: // Backward
-                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, -MDD_int_read(MDD_power));
-                set_tacho_duty_cycle_sp(MY_LEFT_TACHO, -MDD_int_read(MDD_power));
-                set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_RUN_DIRECT);
-                set_tacho_command_inx(MY_LEFT_TACHO, TACHO_RUN_DIRECT);
+            case CMD_BACKWARD:
+                set_tacho_command_inx(MY_LEFT_TACHO,TACHO_RUN_DIRECT);
+                set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_RUN_DIRECT);
+                set_tacho_duty_cycle_sp(MY_LEFT_TACHO,-power);
+                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO,-power);
                 break;
-            case 3: // Left
-                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, MDD_int_read(MDD_power));
-                set_tacho_duty_cycle_sp(MY_LEFT_TACHO, -MDD_int_read(MDD_power));
-                set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_RUN_DIRECT);
-                set_tacho_command_inx(MY_LEFT_TACHO, TACHO_RUN_DIRECT);
+            case CMD_LEFT:
+                set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_RUN_DIRECT);
+                set_tacho_duty_cycle_sp(MY_LEFT_TACHO,-power);
+                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO,power);
                 break;
-            case 4: // Right
-                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, -MDD_int_read(MDD_power));
-                set_tacho_duty_cycle_sp(MY_LEFT_TACHO, MDD_int_read(MDD_power));
-                set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_RUN_DIRECT);
-                set_tacho_command_inx(MY_LEFT_TACHO, TACHO_RUN_DIRECT);
+            case CMD_RIGHT:
+                set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_RUN_DIRECT);
+                set_tacho_duty_cycle_sp(MY_LEFT_TACHO,power);
+                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO,-power);
+                break;
+            default:
+                printf("Unknown command in directThread\n");
                 break;
         }
         usleep(100000); // Small delay to avoid busy-waiting
     }
-    return NULL;
+    return 0;
 }
 
 /**
@@ -207,26 +224,26 @@ void *directThread(void *dummy) {
  * ground station assumes angles in degrees (reset, and data sent)
  */
 void *deadreckoningThread(void *dummy) {
-    double x = 0.0, y = 0.0; // Correction du type
-    double angle = 0.0;
-    struct s_reset_position *reset = NULL;
-
-    deadRWorkerInit();
-    while (!MDD_int_read(MDD_quit)) {
-        if ((reset = (struct s_reset_position *)MDD_generic_read(MDD_reset)) != NULL) {
-            x = (double)reset->x;
-            y = (double)reset->y;
-            angle = reset->a * M_PI / 180.0; // Convert to radians
-            free(reset);
-        }
-
-        deadRWorker(x, y, angle, &x, &y, &angle); // Correction des types
-
-        struct s_reset_position pos = { (int)x, (int)y, (int)(angle * 180.0 / M_PI) };
-        MDD_generic_write(MDD_target, &pos);
-        usleep(100000);
-    }
-    return NULL;
+//    double x = 0.0, y = 0.0; // Correction du type
+//    double angle = 0.0;
+//    struct s_position *reset = NULL;
+//
+//    deadRWorkerInit();
+//    while (!MDD_int_read(MDD_quit)) {
+//        if ((reset = (struct s_position *)MDD_generic_read(MDD_reset)) != NULL) {
+//            x = (double)reset->x;
+//            y = (double)reset->y;
+//            angle = reset->a * M_PI / 180.0; // Convert to radians
+//            free(reset);
+//        }
+//
+//        deadRWorker(x, y, angle, &x, &y, &angle); // Correction des types
+//
+//        struct s_position pos = { (int)x, (int)y, (int)(angle * 180.0 / M_PI) };
+//        MDD_generic_write(MDD_target, &pos);
+//        usleep(100000);
+//    }
+//    return NULL;
 }
 
 
@@ -327,11 +344,11 @@ int main(void) {
                 case 'r': {
                     int x, y, a;
                     if (sscanf(buf + 1, "%d %d %d", &x, &y, &a) == 3) {
-                        struct s_reset_position *reset = malloc(sizeof(struct s_reset_position));
-                        reset->x = x;
-                        reset->y = y;
-                        reset->a = a;
-                        MDD_generic_write(MDD_reset, reset);
+                        position reset;
+                        reset.x = x;
+                        reset.y = y;
+                        reset.a = a;
+                        MDD_generic_write(MDD_reset, &reset);
                         printf("Received command: reset to (%d, %d, %d)\n", x, y, a);
                         printf("Received command: reset to (%d, %d, %d)\n", x, y, a);
                     } else {
@@ -342,10 +359,10 @@ int main(void) {
                 case 't': {
                     int x, y;
                     if (sscanf(buf + 1, "%d %d", &x, &y) == 2) {
-                        struct s_target_position *target = malloc(sizeof(struct s_target_position));
-                        target->x = x;
-                        target->y = y;
-                        MDD_generic_write(MDD_target, target);
+                        target_position target;
+                        target.x = x;
+                        target.y = y;
+                        MDD_generic_write(MDD_target, &target);
                         printf("Received command: target set to (%d, %d)\n", x, y);
                     } else {
                         printf("Invalid target command: %s\n", buf);
@@ -356,11 +373,43 @@ int main(void) {
                     int newMode;
                     if (sscanf(buf + 1, "%d", &newMode) == 1) {
                         mode = newMode;
-                        MDD_int_write(MDD_direct_command, mode);
+                        if(mode == MODE_DIRECT)
+                        {
+                            MDD_int_write(MDD_auto_command, CMD_STOP);
+                        }
+                        else if(mode == MODE_AUTO){
+                            MDD_int_write(MDD_direct_command, CMD_STOP);
+                            MDD_int_write(MDD_auto_command, MODE_AUTO);
+                        }
+
                         printf("Received command: mode set to %d\n", mode);
                     } else {
                         printf("Invalid mode command: %s\n", buf);
                     }
+                    break;
+                }
+                case 'F': // forward
+                {
+                    MDD_int_write(MDD_direct_command, CMD_FORWARD);
+                    bal_put(bal, CMD_FORWARD);
+                    break;
+                }
+                case 'B': // backward
+                {
+                    MDD_int_write(MDD_direct_command, CMD_BACKWARD);
+                    bal_put(bal, CMD_BACKWARD);
+                    break;
+                }
+                case 'L': // left
+                {
+                    MDD_int_write(MDD_direct_command, CMD_LEFT);
+                    bal_put(bal, CMD_LEFT);
+                    break;
+                }
+                case 'R': // right
+                {
+                    MDD_int_write(MDD_direct_command, CMD_RIGHT);
+                    bal_put(bal, CMD_RIGHT);
                     break;
                 }
                 default:
@@ -381,8 +430,12 @@ int main(void) {
     pthread_join(deadreckThreadHandle, NULL);
     pthread_join(autoThreadHandle, NULL);
 
+    fclose(inStream);
+    set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_STOP);
+    set_tacho_command_inx(MY_LEFT_TACHO, TACHO_STOP);
     ev3_uninit();
     printf("Shutdown complete.\n");
+    CloseSockets();
     return 0;
 }
 
