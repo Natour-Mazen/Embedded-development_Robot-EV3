@@ -57,6 +57,68 @@ void init_comms() {
     bal = bal_create();
 }
 
+int get_robot_status() {
+    // Cette fonction retourne un code de statut du robot
+    // Exemple : 0 = Arrêté, 1 = En mouvement, 2 = En mode autonome, etc.
+    // Vous pouvez utiliser une variable ou lire une information d'un capteur ou d'une structure existante.
+    return 1; // Exemple : retourne "1" pour indiquer que le robot est en mouvement
+}
+
+void get_robot_position(int *x, int *y, double *angle) {
+    // Cette fonction met à jour les coordonnées actuelles du robot et son orientation.
+    // Les valeurs peuvent provenir de capteurs ou d'une estimation interne.
+
+    // Exemple : simulation de positions basées sur une logique simple.
+    static int simulated_x = 0;
+    static int simulated_y = 0;
+    static double simulated_angle = 0.0;
+
+    simulated_x += 1;         // Incrémente la position en X pour la simulation
+    simulated_y += 1;         // Incrémente la position en Y pour la simulation
+    simulated_angle += 0.1;   // Fait tourner le robot légèrement
+
+    if (simulated_angle >= 2 * M_PI) {
+        simulated_angle -= 2 * M_PI; // Garde l'angle dans l'intervalle [0, 2*pi]
+    }
+
+    *x = simulated_x;
+    *y = simulated_y;
+    *angle = simulated_angle; // En radians
+}
+
+int autoMoveWorker(int x, int y) {
+    // Cette fonction implémente le mouvement automatique vers une cible (x, y).
+    // Elle retourne 1 si la cible est atteinte, 0 sinon.
+
+    static int current_x = 0;
+    static int current_y = 0;
+
+    int threshold = 5; // Distance acceptable pour considérer que la cible est atteinte
+
+    // Simulation de déplacement vers la cible
+    if (current_x < x) {
+        current_x++;
+    } else if (current_x > x) {
+        current_x--;
+    }
+
+    if (current_y < y) {
+        current_y++;
+    } else if (current_y > y) {
+        current_y--;
+    }
+
+    printf("Current position: (%d, %d)\n", current_x, current_y);
+
+    // Vérifie si la distance à la cible est inférieure au seuil
+    if (abs(current_x - x) <= threshold && abs(current_y - y) <= threshold) {
+        printf("Target reached at (%d, %d)\n", current_x, current_y);
+        return 1; // Cible atteinte
+    }
+
+    return 0; // Cible non atteinte
+}
+
 /**
  * Thread sending information to the ground station
  * It should read the status, and, if modified, fprintf it on outStream
@@ -67,7 +129,8 @@ void init_comms() {
  * Do not forget to fflush outStream at the end of each iteration, or data will be buffered but not sent
  * This thread should end when the application quits, and fclose the outStream socket
  */
-void *sendThread(FILE *outStream) {
+void *sendThread(void *arg) {
+    FILE *outStream = (FILE *)arg; // Reconversion du pointeur
     int x = 0, y = 0, a = 0;
     int status = 0;
     struct timespec horloge;
@@ -85,6 +148,7 @@ void *sendThread(FILE *outStream) {
     fclose(outStream);
     return NULL;
 }
+
 
 /**
  * Thread commanding the robot in direct mode, it should wait everytime for a new command
@@ -156,8 +220,11 @@ void *deadreckoningThread(void *dummy) {
             angle = reset->a * M_PI / 180.0; // Convert to radians
             free(reset);
         }
-        deadRWorker(&x, &y, &angle);
-        MDD_generic_write(MDD_target, &x, &y, (int)(angle * 180.0 / M_PI)); // Update in degrees
+
+        deadRWorker((double)x, (double)y, angle, &x, &y, &angle);
+
+        s_reset_position pos = {x, y, (int)(angle * 180.0 / M_PI)};
+        MDD_generic_write(MDD_target, &pos);
         usleep(100000);
     }
     return NULL;
