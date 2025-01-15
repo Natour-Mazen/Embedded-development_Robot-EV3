@@ -356,6 +356,7 @@ int main(void) {
                     int newMode;
                     if (sscanf(buf + 1, "%d", &newMode) == 1) {
                         mode = newMode;
+                        MDD_int_write(MDD_direct_command, mode);
                         printf("Received command: mode set to %d\n", mode);
                     } else {
                         printf("Invalid mode command: %s\n", buf);
