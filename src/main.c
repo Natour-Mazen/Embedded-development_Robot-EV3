@@ -184,6 +184,29 @@ void *autoThread(void *dummy) {
     return NULL;
 }
 
+/**
+ * Display an error message on the screen and blink the left light
+ */
+void displayError(const char* message)
+{
+    printf("Error : %s\n", message);
+    while(true)
+    {
+        switch ( get_light( LIT_LEFT ))
+        {
+            case LIT_GREEN:
+                set_light( LIT_LEFT, LIT_RED );
+            break;
+            case LIT_RED:
+                set_light( LIT_LEFT, LIT_AMBER );
+            break;
+            default:
+                set_light( LIT_LEFT, LIT_GREEN );
+            break;
+        }
+    }
+}
+
 
 /**
  * The main function will be used as one of the application thread: readGroundstationThread
@@ -222,11 +245,13 @@ int main(void) {
     ev3_tacho_init();
     ev3_sensor_init();
     if (my_init_ev3()) {
+        displayError("my_init_ev3()");
         return 1;
     }
     init_comms();
     printf("Ready and waiting for incoming connection...\n");
     if (WaitClient(&outStream, &inStream)) {
+        displayError("WaitClient(&outStream, &inStream)");
         return 1;
     }
 
