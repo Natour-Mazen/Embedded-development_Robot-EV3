@@ -19,14 +19,40 @@
 #include "communication.h"
 #include "myev3.h"
 #include "workers.h"
+#include "ev3_light.h"
 
 // Shared data and mailboxes
 volatile MDD_int MDD_quit;
-// TODO: declare the rest
+// Shared data and mailboxes
+volatile MDD_int MDD_power;
+volatile MDD_int MDD_auto_command;
+volatile MDD_int MDD_direct_command;
+volatile MDD_generic MDD_target;
+volatile MDD_generic MDD_reset;
+volatile bal_t bal;
+
+typedef struct s_reset_position
+{
+    int x;
+    int y;
+    int a;
+} *reset_position;
+
+typedef struct s_target_position
+{
+    int x;
+    int y;
+} *target_position;
 
 
 void init_comms() {
 	MDD_quit = MDD_int_init(0);
+    MDD_power = MDD_int_init(0);
+    MDD_auto_command = MDD_int_init(0)
+    MDD_direct_command = MDD_int_init(0);
+    MDD_target = MDD_generic_init(sizeof(target_position));
+    MDD_reset = MDD_generic_init(sizeof(reset_position));
+    bal = bal_create();
 	// TODO: initialize the rest
 }
 
@@ -45,6 +71,7 @@ void *sendThread(FILE * outStream) {
 	int status;
 	struct timespec horloge;
 	clock_gettime(CLOCK_REALTIME, &horloge);
+	fopen(outStream);
 	while (!MDD_int_read(MDD_quit)) {
 		// TODO : complete this
 		fflush(outStream);
