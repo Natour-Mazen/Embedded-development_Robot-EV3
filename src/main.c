@@ -208,27 +208,28 @@ void *directThread(void *dummy) {
  * ground station assumes angles in degrees (reset, and data sent)
  */
 void *deadreckoningThread(void *dummy) {
-    int x = 0, y = 0;
+    double x = 0.0, y = 0.0; // Correction du type
     double angle = 0.0;
     struct s_reset_position *reset = NULL;
 
     deadRWorkerInit();
     while (!MDD_int_read(MDD_quit)) {
         if ((reset = (struct s_reset_position *)MDD_generic_read(MDD_reset)) != NULL) {
-            x = reset->x;
-            y = reset->y;
+            x = (double)reset->x;
+            y = (double)reset->y;
             angle = reset->a * M_PI / 180.0; // Convert to radians
             free(reset);
         }
 
-        deadRWorker((double)x, (double)y, angle, &x, &y, &angle);
+        deadRWorker(x, y, angle, &x, &y, &angle); // Correction des types
 
-        s_reset_position pos = {x, y, (int)(angle * 180.0 / M_PI)};
+        struct s_reset_position pos = { (int)x, (int)y, (int)(angle * 180.0 / M_PI) };
         MDD_generic_write(MDD_target, &pos);
         usleep(100000);
     }
     return NULL;
 }
+
 
 /**
  * auto move thread
