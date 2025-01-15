@@ -1,8 +1,8 @@
 /*
- \file		deadreck.c
- \author	${user}
- \date		${date}
- \brief		Simple Hello World! for the Ev3
+ \file\t\tdeadreck.c
+ \author\t${user}
+ \date\t\t${date}
+ \brief\t\tSimple Hello World! for the Ev3
  */
 #include <stdio.h>
 #include <math.h>
@@ -20,10 +20,10 @@
 #include "myev3.h"
 #include "workers.h"
 #include "ev3_light.h"
+#include "bal.h"
 
 // Shared data and mailboxes
 volatile MDD_int MDD_quit;
-// Shared data and mailboxes
 volatile MDD_int MDD_power;
 volatile MDD_int MDD_auto_command;
 volatile MDD_int MDD_direct_command;
@@ -31,29 +31,29 @@ volatile MDD_generic MDD_target;
 volatile MDD_generic MDD_reset;
 volatile bal_t bal;
 
-typedef struct s_reset_position
-{
+typedef struct s_reset_position {
     int x;
     int y;
     int a;
 } *reset_position;
 
-typedef struct s_target_position
-{
+typedef struct s_target_position {
     int x;
     int y;
 } *target_position;
 
 
+/**
+ * Initialize the communication and shared data
+ */
 void init_comms() {
-	MDD_quit = MDD_int_init(0);
+    MDD_quit = MDD_int_init(0);
     MDD_power = MDD_int_init(0);
-    MDD_auto_command = MDD_int_init(0)
+    MDD_auto_command = MDD_int_init(0);
     MDD_direct_command = MDD_int_init(0);
-    MDD_target = MDD_generic_init(sizeof(target_position));
-    MDD_reset = MDD_generic_init(sizeof(reset_position));
+    MDD_target = MDD_generic_init(sizeof(struct s_target_position));
+    MDD_reset = MDD_generic_init(sizeof(struct s_reset_position));
     bal = bal_create();
-	// TODO: initialize the rest
 }
 
 /**
@@ -66,20 +66,23 @@ void init_comms() {
  * Do not forget to fflush outStream at the end of each iteration, or data will be buffered but not sent
  * This thread should end when the application quits, and fclose the outStream socket
  */
-void *sendThread(FILE * outStream) {
-	int x, y, a;
-	int status;
-	struct timespec horloge;
-	clock_gettime(CLOCK_REALTIME, &horloge);
-	fopen(outStream);
-	while (!MDD_int_read(MDD_quit)) {
-		// TODO : complete this
-		fflush(outStream);
-		add_ms(&horloge, 200);
-		clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &horloge, 0);
-	}
-	fclose(outStream);
-	return 0;
+void *sendThread(FILE *outStream) {
+    int x = 0, y = 0, a = 0;
+    int status = 0;
+    struct timespec horloge;
+    clock_gettime(CLOCK_REALTIME, &horloge);
+
+    while (!MDD_int_read(MDD_quit)) {
+        status = get_robot_status();
+        get_robot_position(&x, &y, &a);
+        fprintf(outStream, "s %d\n", status);
+        fprintf(outStream, "p %d %d %d\n", x, y, a);
+        fflush(outStream);
+        add_ms(&horloge, 200);
+        clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &horloge, 0);
+    }
+    fclose(outStream);
+    return NULL;
 }
 
 /**
@@ -91,9 +94,43 @@ void *sendThread(FILE * outStream) {
  * set_tacho_command_inx (for commands TACHO_STOP and TACHO_RUN_DIRECT),
  * set_tacho_duty_cycle_sp in order to configure the power between -100 and 100
  */
-void *directThread(void*dummy) {
-	// TODO : this is a bit long of a switch/case structure but it's fun
-	return 0;
+void *directThread(void *dummy) {
+    int command = 0;
+    while (!MDD_int_read(MDD_quit)) {
+        command = MDD_int_read(MDD_direct_command);
+        switch (command) {
+            case 0: // Stop
+                set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_STOP);
+                set_tacho_command_inx(MY_LEFT_TACHO, TACHO_STOP);
+                break;
+            case 1: // Forward
+                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, MDD_int_read(MDD_power));
+                set_tacho_duty_cycle_sp(MY_LEFT_TACHO, MDD_int_read(MDD_power));
+                set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_RUN_DIRECT);
+                set_tacho_command_inx(MY_LEFT_TACHO, TACHO_RUN_DIRECT);
+                break;
+            case 2: // Backward
+                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, -MDD_int_read(MDD_power));
+                set_tacho_duty_cycle_sp(MY_LEFT_TACHO, -MDD_int_read(MDD_power));
+                set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_RUN_DIRECT);
+                set_tacho_command_inx(MY_LEFT_TACHO, TACHO_RUN_DIRECT);
+                break;
+            case 3: // Left
+                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, MDD_int_read(MDD_power));
+                set_tacho_duty_cycle_sp(MY_LEFT_TACHO, -MDD_int_read(MDD_power));
+                set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_RUN_DIRECT);
+                set_tacho_command_inx(MY_LEFT_TACHO, TACHO_RUN_DIRECT);
+                break;
+            case 4: // Right
+                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, -MDD_int_read(MDD_power));
+                set_tacho_duty_cycle_sp(MY_LEFT_TACHO, MDD_int_read(MDD_power));
+                set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_RUN_DIRECT);
+                set_tacho_command_inx(MY_LEFT_TACHO, TACHO_RUN_DIRECT);
+                break;
+        }
+        usleep(100000); // Small delay to avoid busy-waiting
+    }
+    return NULL;
 }
 
 /**
@@ -105,9 +142,24 @@ void *directThread(void*dummy) {
  * Note: careful, the deadRWorker assumes angles in radian, while
  * ground station assumes angles in degrees (reset, and data sent)
  */
-void * deadreckoningThread(void *dummy) {
-	// TODO : all by yourself
-	return 0;
+void *deadreckoningThread(void *dummy) {
+    int x = 0, y = 0;
+    double angle = 0.0;
+    struct s_reset_position *reset = NULL;
+
+    deadRWorkerInit();
+    while (!MDD_int_read(MDD_quit)) {
+        if ((reset = (struct s_reset_position *)MDD_generic_read(MDD_reset)) != NULL) {
+            x = reset->x;
+            y = reset->y;
+            angle = reset->a * M_PI / 180.0; // Convert to radians
+            free(reset);
+        }
+        deadRWorker(&x, &y, &angle);
+        MDD_generic_write(MDD_target, &x, &y, (int)(angle * 180.0 / M_PI)); // Update in degrees
+        usleep(100000);
+    }
+    return NULL;
 }
 
 /**
@@ -115,10 +167,23 @@ void * deadreckoningThread(void *dummy) {
  * when a target is defined, sets its mode to running (and updates the MDD status),
  * until STOP is received, or quit is received, or the target is reached with an acceptable error.
  */
-void * autoThread(void *dummy) {
-	// TODO : keep this as the bonus question, at the end
-	return 0;
+void *autoThread(void *dummy) {
+    struct s_target_position *target = NULL;
+    int x = 0, y = 0;
+    while (!MDD_int_read(MDD_quit)) {
+        if ((target = (struct s_target_position *)MDD_generic_read(MDD_target)) != NULL) {
+            int targetReached = 0;
+            while (!targetReached && !MDD_int_read(MDD_quit)) {
+                targetReached = autoMoveWorker(target->x, target->y);
+                usleep(100000);
+            }
+            free(target);
+        }
+        usleep(100000);
+    }
+    return NULL;
 }
+
 
 /**
  * The main function will be used as one of the application thread: readGroundstationThread
@@ -147,28 +212,34 @@ void * autoThread(void *dummy) {
  * Every motor should be stopped, inStream should be closed
  */
 int main(void) {
+    char cmd;
+    char buf[256];
+    int mode = MODE_DIRECT;
+    FILE *inStream, *outStream;
 
-	char cmd;
-	char buf[256];
-	int mode = MODE_DIRECT;
-	FILE *inStream, *outStream;
-	ev3_init();
-	ev3_port_init();
-	ev3_tacho_init();
-	ev3_sensor_init();
-	if (my_init_ev3()) {
-		return 1;
-	}
-	init_comms();
-	printf("Ready and waiting for incoming connection...\n");
-	if (WaitClient(&outStream, &inStream)) {
-		return 1;
-	}
-	// TODO: run the threads
-	int quit = 0;
-	while (!quit) {
-		if (fgets(buf,256,inStream)) {
-			cmd = buf[0];
+    ev3_init();
+    ev3_port_init();
+    ev3_tacho_init();
+    ev3_sensor_init();
+    if (my_init_ev3()) {
+        return 1;
+    }
+    init_comms();
+    printf("Ready and waiting for incoming connection...\n");
+    if (WaitClient(&outStream, &inStream)) {
+        return 1;
+    }
+
+    pthread_t sendThreadHandle, directThreadHandle, deadreckThreadHandle, autoThreadHandle;
+    pthread_create(&sendThreadHandle, NULL, sendThread, outStream);
+    pthread_create(&directThreadHandle, NULL, directThread, NULL);
+    pthread_create(&deadreckThreadHandle, NULL, deadreckoningThread, NULL);
+    pthread_create(&autoThreadHandle, NULL, autoThread, NULL);
+
+    int quit = 0;
+    while (!quit) {
+        if (fgets(buf, 256, inStream)) {
+            cmd = buf[0];
             switch (cmd) {
                 case 'q':
                     printf("Received command: quit\n");
@@ -177,6 +248,7 @@ int main(void) {
                 case 'p': {
                     int power;
                     if (sscanf(buf + 1, "%d", &power) == 1) {
+                        MDD_int_write(MDD_power, power);
                         printf("Received command: set power to %d\n", power);
                     } else {
                         printf("Invalid power command: %s\n", buf);
@@ -186,59 +258,62 @@ int main(void) {
                 case 'r': {
                     int x, y, a;
                     if (sscanf(buf + 1, "%d %d %d", &x, &y, &a) == 3) {
+                        struct s_reset_position *reset = malloc(sizeof(struct s_reset_position));
+                        reset->x = x;
+                        reset->y = y;
+                        reset->a = a;
+                        MDD_generic_write(MDD_reset, reset);
+                        printf("Received command: reset to (%d, %d, %d)\n", x, y, a
                         printf("Received command: reset to (%d, %d, %d)\n", x, y, a);
                     } else {
                         printf("Invalid reset command: %s\n", buf);
                     }
                     break;
                 }
+                case 't': {
+                    int x, y;
+                    if (sscanf(buf + 1, "%d %d", &x, &y) == 2) {
+                        struct s_target_position *target = malloc(sizeof(struct s_target_position));
+                        target->x = x;
+                        target->y = y;
+                        MDD_generic_write(MDD_target, target);
+                        printf("Received command: target set to (%d, %d)\n", x, y);
+                    } else {
+                        printf("Invalid target command: %s\n", buf);
+                    }
+                    break;
+                }
                 case 'm': {
-                    int mode;
-                    if (sscanf(buf + 1, "%d", &mode) == 1) {
-                        printf("Received command: set mode to %d\n", mode);
+                    int newMode;
+                    if (sscanf(buf + 1, "%d", &newMode) == 1) {
+                        mode = newMode;
+                        printf("Received command: mode set to %d\n", mode);
                     } else {
                         printf("Invalid mode command: %s\n", buf);
                     }
                     break;
                 }
-                case 'S':
-                    printf("Received command: stop\n");
-                    break;
-                case 'F':
-                    printf("Received command: forward\n");
-                    break;
-                case 'B':
-                    printf("Received command: backward\n");
-                    break;
-                case 'L':
-                    printf("Received command: left\n");
-                    break;
-                case 'R':
-                    printf("Received command: right\n");
-                    break;
-                case 'g': {
-                    int x, y;
-                    if (sscanf(buf + 1, "%d %d", &x, &y) == 2) {
-                        printf("Received command: goto (%d, %d)\n", x, y);
-                    } else {
-                        printf("Invalid goto command: %s\n", buf);
-                    }
-                    break;
-                }
                 default:
-                    printf("Unrecognized command: %s\n", buf);
+                    printf("Unknown command: %c\n", cmd);
+                break;
             }
-		} else {
-			// Connection closed
-			quit = 1;
-		}
-	}
-	MDD_int_write(MDD_quit, 1);
-	// TODO: wait for threads termination (pthread_join)
-	fclose(inStream);
-	set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_STOP);
-	set_tacho_command_inx(MY_LEFT_TACHO, TACHO_STOP);
-	ev3_uninit();
-	CloseSockets();
-	return 0;
+        } else {
+            printf("Connection closed by client.\n");
+            quit = 1;
+        }
+    }
+
+    printf("Shutting down...\n");
+    MDD_int_write(MDD_quit, 1);
+
+    pthread_join(sendThreadHandle, NULL);
+    pthread_join(directThreadHandle, NULL);
+    pthread_join(deadreckThreadHandle, NULL);
+    pthread_join(autoThreadHandle, NULL);
+
+    ev3_uninit();
+    printf("Shutdown complete.\n");
+    return 0;
 }
+
+
