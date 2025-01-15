@@ -19,8 +19,9 @@
 #include "communication.h"
 #include "myev3.h"
 #include "workers.h"
-#include "ev3_light.h"
 #include "bal.h"
+
+#include "print.h"
 
 // Shared data and mailboxes
 volatile MDD_int MDD_quit;
@@ -185,30 +186,6 @@ void *autoThread(void *dummy) {
 }
 
 /**
- * Display an error message on the screen and blink the left light
- */
-void displayError(const char* message)
-{
-    printf("Error : %s\n", message);
-    while(true)
-    {
-        switch ( get_light( LIT_LEFT ))
-        {
-            case LIT_GREEN:
-                set_light( LIT_LEFT, LIT_RED );
-            break;
-            case LIT_RED:
-                set_light( LIT_LEFT, LIT_AMBER );
-            break;
-            default:
-                set_light( LIT_LEFT, LIT_GREEN );
-            break;
-        }
-    }
-}
-
-
-/**
  * The main function will be used as one of the application thread: readGroundstationThread
  * It will be in charge of initializing the ev3: ev3_init ev3_port_init ev3_tacho_init ev3_sensor_init
  * then initializing our specific ev3 ports: my_init_ev3
@@ -288,7 +265,7 @@ int main(void) {
                         reset->y = y;
                         reset->a = a;
                         MDD_generic_write(MDD_reset, reset);
-                        printf("Received command: reset to (%d, %d, %d)\n", x, y, a
+                        printf("Received command: reset to (%d, %d, %d)\n", x, y, a);
                         printf("Received command: reset to (%d, %d, %d)\n", x, y, a);
                     } else {
                         printf("Invalid reset command: %s\n", buf);
