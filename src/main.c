@@ -14,14 +14,13 @@
 #include <ev3_sensor.h>
 #include <pthread.h>
 #include <time.h>
+#include "print.h"
 #include "time_util.h"
 #include "mdd.h"
 #include "communication.h"
 #include "myev3.h"
 #include "workers.h"
 #include "bal.h"
-
-#include "print.h"
 
 // Shared data and mailboxes
 volatile MDD_int MDD_quit;

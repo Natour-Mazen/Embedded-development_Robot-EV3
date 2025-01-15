@@ -10,8 +10,6 @@
 #include<arpa/inet.h> //inet_addr
 #include<unistd.h>    //write
 
-#include "print.h"
-
 #define PORT 2224
 static int socket_desc;
 
