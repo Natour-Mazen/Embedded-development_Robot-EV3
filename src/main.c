@@ -180,8 +180,8 @@ void *directThread(void *dummy)
         switch (command)
         {
             case CMD_STOP:
-                //set_tacho_command_inx(MY_LEFT_TACHO,TACHO_STOP);
-                //set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_STOP);
+                set_tacho_command_inx(MY_LEFT_TACHO,TACHO_STOP);
+                set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_STOP);
                 break;
             case CMD_FORWARD:
                 set_tacho_command_inx(MY_LEFT_TACHO,TACHO_RUN_DIRECT);
@@ -329,6 +329,7 @@ int main(void) {
             switch (cmd) {
                 case 'q':
                     printf("Received command: quit\n");
+                    MDD_int_write(MDD_quit, 1);
                     quit = 1;
                     break;
                 case 'p': {
@@ -424,6 +425,8 @@ int main(void) {
 
     printf("Shutting down...\n");
     MDD_int_write(MDD_quit, 1);
+    // To stop direct.
+    bal_put(bal, CMD_STOP);
 
     pthread_join(sendThreadHandle, NULL);
     pthread_join(directThreadHandle, NULL);
