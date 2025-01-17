@@ -7,6 +7,7 @@ DEPS = $(sources:.c=.h)
 
 robot_bin: $(objects)
 	$(CC) -static -o $@ $^ $(LDFLAGS)
+	rm -f *.o
 
 %.o : %.c $(DEPS)
 	$(CC) $(CFLAGS) -c $< -o $@ 
