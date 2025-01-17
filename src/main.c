@@ -177,10 +177,6 @@ void *directThread(void *dummy)
         printf("Direct command received: %d\n", command);
 
         int power = MDD_int_read(MDD_power);
-        if(power){
-          power = bal_get(bal);
-        }
-
         switch (command)
         {
             case CMD_STOP:
@@ -339,7 +335,6 @@ int main(void) {
                     int power;
                     if (sscanf(buf + 1, "%d", &power) == 1) {
                         MDD_int_write(MDD_power, power);
-                        bal_put(bal, CMD_FORWARD);
                         printf("Received command: set power to %d\n", power);
                     } else {
                         printf("Invalid power command: %s\n", buf);
