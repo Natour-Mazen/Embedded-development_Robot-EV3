@@ -14,7 +14,6 @@
 #include <ev3_sensor.h>
 #include <pthread.h>
 #include <time.h>
-#include "print.h"
 #include "time_util.h"
 #include "mdd.h"
 #include "communication.h"
@@ -34,14 +33,14 @@ volatile MDD_int MDD_status;
 volatile bal_t bal;
 
 typedef struct s_position {
-    int x;
-    int y;
+    double x;
+    double y;
     int a;
 } position, *pPosition;
 
 typedef struct s_target_position {
-    int x;
-    int y;
+    double x;
+    double y;
 } target_position, *pTarget_position;
 
 
@@ -60,68 +59,6 @@ void init_comms() {
     bal = bal_create();
 }
 
-int get_robot_status() {
-    // Cette fonction retourne un code de statut du robot
-    // Exemple : 0 = Arrêté, 1 = En mouvement, 2 = En mode autonome, etc.
-    // Vous pouvez utiliser une variable ou lire une information d'un capteur ou d'une structure existante.
-    return 1; // Exemple : retourne "1" pour indiquer que le robot est en mouvement
-}
-
-void get_robot_position(int *x, int *y, double *angle) {
-    // Cette fonction met à jour les coordonnées actuelles du robot et son orientation.
-    // Les valeurs peuvent provenir de capteurs ou d'une estimation interne.
-
-    // Exemple : simulation de positions basées sur une logique simple.
-    static int simulated_x = 0;
-    static int simulated_y = 0;
-    static double simulated_angle = 0.0;
-
-    simulated_x += 1;         // Incrémente la position en X pour la simulation
-    simulated_y += 1;         // Incrémente la position en Y pour la simulation
-    simulated_angle += 0.1;   // Fait tourner le robot légèrement
-
-    if (simulated_angle >= 2 * M_PI) {
-        simulated_angle -= 2 * M_PI; // Garde l'angle dans l'intervalle [0, 2*pi]
-    }
-
-    *x = simulated_x;
-    *y = simulated_y;
-    *angle = simulated_angle; // En radians
-}
-
-int autoMoveWorker(int x, int y) {
-    // Cette fonction implémente le mouvement automatique vers une cible (x, y).
-    // Elle retourne 1 si la cible est atteinte, 0 sinon.
-
-    static int current_x = 0;
-    static int current_y = 0;
-
-    int threshold = 5; // Distance acceptable pour considérer que la cible est atteinte
-
-    // Simulation de déplacement vers la cible
-    if (current_x < x) {
-        current_x++;
-    } else if (current_x > x) {
-        current_x--;
-    }
-
-    if (current_y < y) {
-        current_y++;
-    } else if (current_y > y) {
-        current_y--;
-    }
-
-    printf("Current position: (%d, %d)\n", current_x, current_y);
-
-    // Vérifie si la distance à la cible est inférieure au seuil
-    if (abs(current_x - x) <= threshold && abs(current_y - y) <= threshold) {
-        printf("Target reached at (%d, %d)\n", current_x, current_y);
-        return 1; // Cible atteinte
-    }
-
-    return 0; // Cible non atteinte
-}
-
 /**
  * Thread sending information to the ground station
  * It should read the status, and, if modified, fprintf it on outStream
@@ -132,25 +69,29 @@ int autoMoveWorker(int x, int y) {
  * Do not forget to fflush outStream at the end of each iteration, or data will be buffered but not sent
  * This thread should end when the application quits, and fclose the outStream socket
  */
-void *sendThread(void *arg) {
-//    FILE *outStream = (FILE *)arg; // Reconversion du pointeur
-//    int x = 0, y = 0, a = 0;
-//    int status = 0;
-//    struct timespec horloge;
-//    clock_gettime(CLOCK_REALTIME, &horloge);
-//
-//    while (!MDD_int_read(MDD_quit)) {
-//        status = MDD_int_read(MDD_status);
-////        status = get_robot_status();
-//        get_robot_position(&x, &y, &a);
-//        fprintf(outStream, "s %d\n", status);
-//        fprintf(outStream, "p %d %d %d\n", x, y, a);
-//        fflush(outStream);
-//        add_ms(&horloge, 200);
-//        clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &horloge, 0);
-//    }
-//    fclose(outStream);
-//    return NULL;
+void* sendThread(void* outStream) {
+    int x, y, a;
+    int status;
+    struct timespec horloge;
+    clock_gettime(CLOCK_REALTIME, &horloge);
+    while (!MDD_int_read(MDD_quit)) {
+        status = MDD_int_read(MDD_status);
+        position *pos = (position *)MDD_generic_read(MDD_position);
+        if(pos != NULL) {
+            x = (int) pos->x;
+            y = (int) pos->y;
+            a = pos->a;
+            fprintf((FILE*)outStream, "s %d\n", status);
+            fprintf((FILE*)outStream, "p %d %d %d\n", x, y, a);
+            fflush((FILE*)outStream);
+            free(pos);
+        }
+        fflush((FILE*)outStream);
+        add_ms(&horloge, 200);
+        clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &horloge, 0);
+    }
+    fclose((FILE*)outStream);
+    return NULL;
 }
 
 
@@ -163,9 +104,8 @@ void *sendThread(void *arg) {
  * set_tacho_command_inx (for commands TACHO_STOP and TACHO_RUN_DIRECT),
  * set_tacho_duty_cycle_sp in order to configure the power between -100 and 100
  */
-void *directThread(void *dummy)
+void* directThread(void* arg)
 {
-
     printf("Direct thread started\n");
     int command = 1;
 
@@ -173,8 +113,15 @@ void *directThread(void *dummy)
     {
         printf("Waiting for direct command\n");
         command = bal_get(bal);
-        //command = MDD_int_read(MDD_direct_command);
         printf("Direct command received: %d\n", command);
+
+        // Tell to the sendTread the status.
+        if(command != CMD_STOP){
+            MDD_int_write(MDD_status, STATUS_DIRECT_MOVE);
+        }
+        else{
+            MDD_int_write(MDD_status, STATUS_STANDBY);
+        }
 
         int power = MDD_int_read(MDD_power);
         switch (command)
@@ -186,21 +133,23 @@ void *directThread(void *dummy)
             case CMD_FORWARD:
                 set_tacho_command_inx(MY_LEFT_TACHO,TACHO_RUN_DIRECT);
                 set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_RUN_DIRECT);
-                set_tacho_duty_cycle_sp(MY_LEFT_TACHO,power);
-                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO,power);
+                set_tacho_duty_cycle_sp(MY_LEFT_TACHO, -power);
+                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, -power);
                 break;
             case CMD_BACKWARD:
                 set_tacho_command_inx(MY_LEFT_TACHO,TACHO_RUN_DIRECT);
                 set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_RUN_DIRECT);
-                set_tacho_duty_cycle_sp(MY_LEFT_TACHO,-power);
-                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO,-power);
+                set_tacho_duty_cycle_sp(MY_LEFT_TACHO, power);
+                set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, power);
                 break;
             case CMD_LEFT:
+                set_tacho_command_inx(MY_LEFT_TACHO,TACHO_RUN_DIRECT);
                 set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_RUN_DIRECT);
                 set_tacho_duty_cycle_sp(MY_LEFT_TACHO,-power);
                 set_tacho_duty_cycle_sp(MY_RIGHT_TACHO,power);
                 break;
             case CMD_RIGHT:
+                set_tacho_command_inx(MY_LEFT_TACHO,TACHO_RUN_DIRECT);
                 set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_RUN_DIRECT);
                 set_tacho_duty_cycle_sp(MY_LEFT_TACHO,power);
                 set_tacho_duty_cycle_sp(MY_RIGHT_TACHO,-power);
@@ -211,7 +160,7 @@ void *directThread(void *dummy)
         }
         usleep(100000); // Small delay to avoid busy-waiting
     }
-    return 0;
+    return arg;
 }
 
 /**
@@ -223,50 +172,136 @@ void *directThread(void *dummy)
  * Note: careful, the deadRWorker assumes angles in radian, while
  * ground station assumes angles in degrees (reset, and data sent)
  */
-void *deadreckoningThread(void *dummy) {
-//    double x = 0.0, y = 0.0; // Correction du type
-//    double angle = 0.0;
-//    struct s_position *reset = NULL;
-//
-//    deadRWorkerInit();
-//    while (!MDD_int_read(MDD_quit)) {
-//        if ((reset = (struct s_position *)MDD_generic_read(MDD_reset)) != NULL) {
-//            x = (double)reset->x;
-//            y = (double)reset->y;
-//            angle = reset->a * M_PI / 180.0; // Convert to radians
-//            free(reset);
-//        }
-//
-//        deadRWorker(x, y, angle, &x, &y, &angle); // Correction des types
-//
-//        struct s_position pos = { (int)x, (int)y, (int)(angle * 180.0 / M_PI) };
-//        MDD_generic_write(MDD_target, &pos);
-//        usleep(100000);
-//    }
-//    return NULL;
+void* deadreckoningThread(void* arg) {
+    double x = 0.0, y = 0.0;
+    double angle = 0.0;
+    position reset = {x, y, angle};
+
+    deadRWorkerInit();
+    while (!MDD_int_read(MDD_quit)) {
+        // If the 'reset' value is new, then we change compute a new value.
+        if (MDD_generic_read2(MDD_reset, &reset)) {
+            x = reset.x;
+            y = reset.y;
+            angle = reset.a * M_PI / 180.0; // Convert to radians
+        }
+
+        deadRWorker(x, y, angle, &x, &y, &angle); // Correction des types
+
+        position pos = { (int)x, (int)y, (int)(angle * 180.0 / M_PI) };
+        MDD_generic_write(MDD_position, &pos);
+        // 30 ms.
+        usleep(30000);
+    }
+    return arg;
 }
 
+
+#define DISTANCE_THRESHOLD 5    // Tolérance de distance pour considérer que la cible est atteinte
+#define ANGLE_THRESHOLD 5       // Tolérance d'angle en degrés
+
+/**
+ * autoMove - Permet de déplacer le robot vers une cible donnée.
+ *
+ * @param x_start: Position actuelle en X du robot.
+ * @param y_start: Position actuelle en Y du robot.
+ * @param angle_start: Orientation actuelle du robot en degrés.
+ * @param x_target: Position cible en X.
+ * @param y_target: Position cible en Y.
+ *
+ * @return int: 1 si la cible est atteinte, 0 sinon.
+ */
+int autoMove(double x_start, double y_start, double angle_start, double x_target, double y_target) {
+    double dx = x_target - x_start;
+    double dy = y_target - y_start;
+
+    printf("dx %f\n", dx);
+    printf("dy %f\n", dy);
+    printf("x_start %f\n", x_start);
+    printf("y_start %f\n", y_start);
+    printf("angle_start %f\n", angle_start);
+    printf("x_target %f\n", x_target);
+    printf("y_target %f\n", y_target);
+
+    // Calcul de la distance et de l'angle cible
+    double distance = sqrt(dx * dx + dy * dy);
+    printf("distance %f\n", distance);
+    double target_angle = atan2(dy, dx) * 180.0 / M_PI; // Convertir en degrés
+    printf("target_angle %f\n", target_angle);
+    double angle_error = target_angle - angle_start;
+    printf("angle_error %f\n", angle_error);
+    usleep(100000);
+
+    // Normalisation de l'angle dans [-180, 180]
+    while (angle_error > 180) angle_error -= 360;
+    while (angle_error < -180) angle_error += 360;
+    printf("angle_error %f\n", angle_error);
+
+    // Read the actual power
+    int power = MDD_int_read(MDD_power);
+
+    // Ajustement de l'orientation du robot
+    if (fabs(angle_error) < ANGLE_THRESHOLD) {
+        set_tacho_command_inx(MY_LEFT_TACHO, TACHO_RUN_DIRECT);
+        set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_RUN_DIRECT);
+        if (angle_error > 0) {
+            set_tacho_duty_cycle_sp(MY_LEFT_TACHO, -power);  // Tourner à gauche
+            set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, power);  // Tourner à gauche
+        } else {
+            set_tacho_duty_cycle_sp(MY_LEFT_TACHO, power);   // Tourner à droite
+            set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, -power); // Tourner à droite
+        }
+        usleep(1000); // Pause pour permettre le mouvement
+        return 0; // Pas encore aligné
+    }
+
+    // Déplacement en ligne droite
+    if (distance > DISTANCE_THRESHOLD) {
+        set_tacho_command_inx(MY_LEFT_TACHO, TACHO_RUN_DIRECT);
+        set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_RUN_DIRECT);
+        set_tacho_duty_cycle_sp(MY_LEFT_TACHO, -power); // Avancer
+        set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, -power); // Avancer
+        usleep(5000); // Pause pour permettre le mouvement
+        return 0; // Pas encore arrivé
+    }
+
+    // Arrêt du robot
+    set_tacho_command_inx(MY_LEFT_TACHO, TACHO_STOP);
+    set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_STOP);
+    return 1; // Cible atteinte
+}
 
 /**
  * auto move thread
  * when a target is defined, sets its mode to running (and updates the MDD status),
  * until STOP is received, or quit is received, or the target is reached with an acceptable error.
  */
-void *autoThread(void *dummy) {
-    struct s_target_position *target = NULL;
+void* autoThread(void* arg) {
     int x = 0, y = 0;
+    target_position target = {x, y};
+    position pos = {0,0,0};
     while (!MDD_int_read(MDD_quit)) {
-        if ((target = (struct s_target_position *)MDD_generic_read(MDD_target)) != NULL) {
+
+        // Tell to the sendTread the status.
+        MDD_int_write(MDD_status, STATUS_AUTO_MOVE);
+
+        if (MDD_generic_read2(MDD_target, &target)) {
             int targetReached = 0;
-            while (!targetReached && !MDD_int_read(MDD_quit)) {
-                targetReached = autoMoveWorker(target->x, target->y);
-                usleep(100000);
+            int power = MDD_int_read(MDD_power);
+            while (!targetReached && MDD_int_read(MDD_auto_command) && !MDD_int_read(MDD_quit)) {
+                MDD_generic_read2(MDD_position, &pos);
+                //targetReached = autoMove(pos.x, pos.y, pos.a, target.x, target.y);
+                // TODO
+                int     error = deadreckoningGoTo(pos.x, pos.y, pos.a, target.x, target.y, power);
+                if(error < DISTANCE_THRESHOLD){
+                    targetReached = 1;
+                }
+                usleep(10000);
             }
-            free(target);
         }
-        usleep(100000);
+        usleep(10000);
     }
-    return NULL;
+    return arg;
 }
 
 /**
@@ -295,7 +330,7 @@ void *autoThread(void *dummy) {
  * Cleanup made in this thread, after making sure that every other thread is finished (pthread_join):
  * Every motor should be stopped, inStream should be closed
  */
-int main(void) {
+int main() {
     char cmd;
     char buf[256];
     int mode = MODE_DIRECT;
@@ -306,13 +341,11 @@ int main(void) {
     ev3_tacho_init();
     ev3_sensor_init();
     if (my_init_ev3()) {
-        displayError("my_init_ev3()");
         return 1;
     }
     init_comms();
     printf("Ready and waiting for incoming connection...\n");
     if (WaitClient(&outStream, &inStream)) {
-        displayError("WaitClient(&outStream, &inStream)");
         return 1;
     }
 
@@ -357,7 +390,7 @@ int main(void) {
                     }
                     break;
                 }
-                case 't': {
+                case 'g': {
                     int x, y;
                     if (sscanf(buf + 1, "%d %d", &x, &y) == 2) {
                         target_position target;
@@ -411,6 +444,17 @@ int main(void) {
                 {
                     MDD_int_write(MDD_direct_command, CMD_RIGHT);
                     bal_put(bal, CMD_RIGHT);
+                    break;
+                }
+                case 'S': // stop
+                {
+                    if (mode == MODE_DIRECT) {
+                        MDD_int_write(MDD_direct_command, CMD_STOP);
+                        bal_put(bal, CMD_STOP);
+                    } else if (mode == MODE_AUTO) {
+                        MDD_int_write(MDD_auto_command, CMD_STOP);
+                    }
+                    MDD_int_write(MDD_status, STATUS_STANDBY);
                     break;
                 }
                 default:

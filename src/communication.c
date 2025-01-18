@@ -20,7 +20,6 @@ int WaitClient(FILE **outStream,FILE ** inStream) {
     socket_desc = socket(AF_INET , SOCK_STREAM , 0);
     if (socket_desc == -1) {
         perror("Could not create socket. Error");
-        displayError("Could not create socket");
         return 1;
     }
     server.sin_family = AF_INET;
@@ -29,7 +28,6 @@ int WaitClient(FILE **outStream,FILE ** inStream) {
     if( bind(socket_desc,(struct sockaddr *)&server , sizeof(server)) < 0) {
         //print the error message
         perror("bind failed, you should wait a bit for the port to be freed by the system. Error");
-        displayError("bind failed, you should wait a bit for the port to be freed by the system.");
         return 1;
     }
     listen(socket_desc , 1);
@@ -37,14 +35,12 @@ int WaitClient(FILE **outStream,FILE ** inStream) {
     client_sock = accept(socket_desc, (struct sockaddr *)&client, (socklen_t*)&s);
     if (client_sock < 0) {
         perror("accept failed");
-        displayError("accept failed");
         return 1;
     }
     client_sock2=dup(client_sock);
     *inStream=fdopen(client_sock,"r");
     *outStream=fdopen(client_sock2,"w");
     if (*inStream==0 || *outStream==0) {
-        displayError("accept failed");
     	return 1;
     }
     return 0;

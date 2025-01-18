@@ -81,8 +81,8 @@ int MDD_int_read(MDD_int mdd) {
  *\param mdd[in] the shared data
  *\return value of the shared data
  */
-void *MDD_generic_read(MDD_generic mdd) {
-	void *val=malloc(mdd->size);
+void* MDD_generic_read(MDD_generic mdd) {
+	void* val = malloc(mdd->size);
 	pthread_mutex_lock(&(mdd->mutex));
 	memcpy(val,mdd->val,mdd->size);
 	mdd->dirty=0;
