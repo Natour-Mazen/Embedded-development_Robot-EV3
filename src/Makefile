@@ -14,4 +14,4 @@ robot_bin: $(objects)
 
 clean:
 	rm -f *.o
-	rm bin
+	rm robot_bin

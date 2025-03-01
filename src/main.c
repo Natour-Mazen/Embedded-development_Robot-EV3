@@ -1,9 +1,7 @@
 /*
- \file\t\tdeadreck.c
- \author\t${user}
- \date\t\t${date}
- \brief\t\tSimple Hello World! for the Ev3
+ * main.h
  */
+
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
@@ -42,7 +40,6 @@ typedef struct s_target_position {
     double x;
     double y;
 } target_position, *pTarget_position;
-
 
 /**
  * Initialize the communication and shared data
@@ -93,7 +90,6 @@ void* sendThread(void* outStream) {
     fclose((FILE*)outStream);
     return NULL;
 }
-
 
 /**
  * Thread commanding the robot in direct mode, it should wait everytime for a new command
@@ -197,79 +193,7 @@ void* deadreckoningThread(void* arg) {
 }
 
 
-#define DISTANCE_THRESHOLD 5    // Tolérance de distance pour considérer que la cible est atteinte
-#define ANGLE_THRESHOLD 5       // Tolérance d'angle en degrés
-
-/**
- * autoMove - Permet de déplacer le robot vers une cible donnée.
- *
- * @param x_start: Position actuelle en X du robot.
- * @param y_start: Position actuelle en Y du robot.
- * @param angle_start: Orientation actuelle du robot en degrés.
- * @param x_target: Position cible en X.
- * @param y_target: Position cible en Y.
- *
- * @return int: 1 si la cible est atteinte, 0 sinon.
- */
-int autoMove(double x_start, double y_start, double angle_start, double x_target, double y_target) {
-    double dx = x_target - x_start;
-    double dy = y_target - y_start;
-
-    printf("dx %f\n", dx);
-    printf("dy %f\n", dy);
-    printf("x_start %f\n", x_start);
-    printf("y_start %f\n", y_start);
-    printf("angle_start %f\n", angle_start);
-    printf("x_target %f\n", x_target);
-    printf("y_target %f\n", y_target);
-
-    // Calcul de la distance et de l'angle cible
-    double distance = sqrt(dx * dx + dy * dy);
-    printf("distance %f\n", distance);
-    double target_angle = atan2(dy, dx) * 180.0 / M_PI; // Convertir en degrés
-    printf("target_angle %f\n", target_angle);
-    double angle_error = target_angle - angle_start;
-    printf("angle_error %f\n", angle_error);
-    usleep(100000);
-
-    // Normalisation de l'angle dans [-180, 180]
-    while (angle_error > 180) angle_error -= 360;
-    while (angle_error < -180) angle_error += 360;
-    printf("angle_error %f\n", angle_error);
-
-    // Read the actual power
-    int power = MDD_int_read(MDD_power);
-
-    // Ajustement de l'orientation du robot
-    if (fabs(angle_error) < ANGLE_THRESHOLD) {
-        set_tacho_command_inx(MY_LEFT_TACHO, TACHO_RUN_DIRECT);
-        set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_RUN_DIRECT);
-        if (angle_error > 0) {
-            set_tacho_duty_cycle_sp(MY_LEFT_TACHO, -power);  // Tourner à gauche
-            set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, power);  // Tourner à gauche
-        } else {
-            set_tacho_duty_cycle_sp(MY_LEFT_TACHO, power);   // Tourner à droite
-            set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, -power); // Tourner à droite
-        }
-        usleep(1000); // Pause pour permettre le mouvement
-        return 0; // Pas encore aligné
-    }
-
-    // Déplacement en ligne droite
-    if (distance > DISTANCE_THRESHOLD) {
-        set_tacho_command_inx(MY_LEFT_TACHO, TACHO_RUN_DIRECT);
-        set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_RUN_DIRECT);
-        set_tacho_duty_cycle_sp(MY_LEFT_TACHO, -power); // Avancer
-        set_tacho_duty_cycle_sp(MY_RIGHT_TACHO, -power); // Avancer
-        usleep(5000); // Pause pour permettre le mouvement
-        return 0; // Pas encore arrivé
-    }
-
-    // Arrêt du robot
-    set_tacho_command_inx(MY_LEFT_TACHO, TACHO_STOP);
-    set_tacho_command_inx(MY_RIGHT_TACHO, TACHO_STOP);
-    return 1; // Cible atteinte
-}
+#define DISTANCE_THRESHOLD 0    // Tolérance de distance pour considérer que la cible est atteinte.
 
 /**
  * auto move thread
@@ -288,16 +212,19 @@ void* autoThread(void* arg) {
         if (MDD_generic_read2(MDD_target, &target)) {
             int targetReached = 0;
             int power = MDD_int_read(MDD_power);
-            while (!targetReached && MDD_int_read(MDD_auto_command) && !MDD_int_read(MDD_quit)) {
+            while (!targetReached && MDD_int_read(MDD_auto_command) && !MDD_int_read(MDD_quit) && power > 0) {
                 MDD_generic_read2(MDD_position, &pos);
-                //targetReached = autoMove(pos.x, pos.y, pos.a, target.x, target.y);
                 // TODO
-                int     error = deadreckoningGoTo(pos.x, pos.y, pos.a, target.x, target.y, power);
-                if(error < DISTANCE_THRESHOLD){
+                int alpha = (pos.a) * M_PI / 180.0; // + 90, because otherwise the robot turns 90° right to go forward.
+                double error = deadreckoningGoTo(pos.x, pos.y, alpha, target.x, target.y, power);
+                printf("Pos: %.1f %.1f %d, Error %.2f, target %.1f %.1f\n", pos.x, pos.y, pos.a, error, target.x, target.y);
+                if(error <= DISTANCE_THRESHOLD){
                     targetReached = 1;
                 }
                 usleep(10000);
             }
+            set_tacho_command_inx(MY_LEFT_TACHO,TACHO_STOP);
+            set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_STOP);
         }
         usleep(10000);
     }
@@ -368,6 +295,9 @@ int main() {
                 case 'p': {
                     int power;
                     if (sscanf(buf + 1, "%d", &power) == 1) {
+                        if(power < 20 && power > 0){
+                            power = 20;
+                        }
                         MDD_int_write(MDD_power, power);
                         printf("Received command: set power to %d\n", power);
                     } else {
