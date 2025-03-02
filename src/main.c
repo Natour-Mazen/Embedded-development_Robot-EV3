@@ -182,7 +182,7 @@ void* deadreckoningThread(void* arg) {
             angle = reset.a * M_PI / 180.0; // Convert to radians
         }
 
-        deadRWorker(x, y, angle, &x, &y, &angle); // Correction des types
+        deadRWorker(x, y, angle, &x, &y, &angle);
 
         position pos = { (int)x, (int)y, (int)(angle * 180.0 / M_PI) };
         MDD_generic_write(MDD_position, &pos);
@@ -191,9 +191,6 @@ void* deadreckoningThread(void* arg) {
     }
     return arg;
 }
-
-
-#define DISTANCE_THRESHOLD 0    // Tolérance de distance pour considérer que la cible est atteinte.
 
 /**
  * auto move thread
@@ -211,14 +208,34 @@ void* autoThread(void* arg) {
 
         if (MDD_generic_read2(MDD_target, &target)) {
             int targetReached = 0;
+            // For loop detection.
+            int whileError = 0;
+            float lastX = 0, lastY = 0;
+            int lastA = 0;
+
             int power = MDD_int_read(MDD_power);
             while (!targetReached && MDD_int_read(MDD_auto_command) && !MDD_int_read(MDD_quit) && power > 0) {
                 MDD_generic_read2(MDD_position, &pos);
-                // TODO
-                int alpha = (pos.a) * M_PI / 180.0; // + 90, because otherwise the robot turns 90° right to go forward.
+
+                double alpha = (pos.a) * M_PI / 180.0;
                 double error = deadreckoningGoTo(pos.x, pos.y, alpha, target.x, target.y, power);
-                printf("Pos: %.1f %.1f %d, Error %.2f, target %.1f %.1f\n", pos.x, pos.y, pos.a, error, target.x, target.y);
-                if(error <= DISTANCE_THRESHOLD){
+                printf("P %.1f %.1f %d, E %.0f, T %.1f %.1f\n", pos.x, pos.y, pos.a, error, target.x, target.y);
+                // To prevent loop.
+                if(lastX == pos.x && lastY == pos.y && lastA == pos.a){
+                    whileError++;
+                }
+                else{
+                    lastX = pos.x;
+                    lastY = pos.y;
+                    lastA = pos.a;
+                    whileError = 0;
+                }
+                // If a loop is detected, we break.
+                if(whileError >= 500){
+                    break;
+                }
+                // Target reached.
+                if(error <= 0){
                     targetReached = 1;
                 }
                 usleep(10000);
@@ -287,12 +304,12 @@ int main() {
         if (fgets(buf, 256, inStream)) {
             cmd = buf[0];
             switch (cmd) {
-                case 'q':
+                case 'q': // quit
                     printf("Received command: quit\n");
                     MDD_int_write(MDD_quit, 1);
                     quit = 1;
                     break;
-                case 'p': {
+                case 'p': { // current power to be set to pow
                     int power;
                     if (sscanf(buf + 1, "%d", &power) == 1) {
                         if(power < 20 && power > 0){
@@ -305,7 +322,7 @@ int main() {
                     }
                     break;
                 }
-                case 'r': {
+                case 'r': { // current position and heading should be reset to (x,y,alpha)
                     int x, y, a;
                     if (sscanf(buf + 1, "%d %d %d", &x, &y, &a) == 3) {
                         position reset;
@@ -320,20 +337,21 @@ int main() {
                     }
                     break;
                 }
-                case 'g': {
+                case 'g': { // auto goto (x,y)
                     int x, y;
                     if (sscanf(buf + 1, "%d %d", &x, &y) == 2) {
                         target_position target;
                         target.x = x;
                         target.y = y;
                         MDD_generic_write(MDD_target, &target);
+                        MDD_int_write(MDD_auto_command, MODE_AUTO);
                         printf("Received command: target set to (%d, %d)\n", x, y);
                     } else {
                         printf("Invalid target command: %s\n", buf);
                     }
                     break;
                 }
-                case 'm': {
+                case 'm': { // set the mode to MODE_DIRECT (0) or MODE_AUTO (1)
                     int newMode;
                     if (sscanf(buf + 1, "%d", &newMode) == 1) {
                         mode = newMode;
@@ -402,6 +420,7 @@ int main() {
     // To stop direct.
     bal_put(bal, CMD_STOP);
 
+    // Join the threads.
     pthread_join(sendThreadHandle, NULL);
     pthread_join(directThreadHandle, NULL);
     pthread_join(deadreckThreadHandle, NULL);
