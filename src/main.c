@@ -154,7 +154,8 @@ void* directThread(void* arg)
                 printf("Unknown command in directThread\n");
                 break;
         }
-        usleep(100000); // Small delay to avoid busy-waiting
+        // 10 ms.
+        usleep(10000); // Small delay to avoid busy-waiting
     }
     return arg;
 }
@@ -243,7 +244,8 @@ void* autoThread(void* arg) {
             set_tacho_command_inx(MY_LEFT_TACHO,TACHO_STOP);
             set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_STOP);
         }
-        usleep(10000);
+        // 50 ms.
+        usleep(50000);
     }
     return arg;
 }
