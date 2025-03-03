@@ -239,7 +239,8 @@ void* autoThread(void* arg) {
                 if(error <= 0){
                     targetReached = 1;
                 }
-                usleep(10000);
+                // 50 ms.
+                usleep(50000);
             }
             set_tacho_command_inx(MY_LEFT_TACHO,TACHO_STOP);
             set_tacho_command_inx(MY_RIGHT_TACHO,TACHO_STOP);
