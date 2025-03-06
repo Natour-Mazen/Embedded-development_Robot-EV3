@@ -44,14 +44,6 @@ Ce projet concerne le développement embarqué pour le robot EV3 de LEGO Mindsto
 
 Pour voir une démonstration du projet en action, regardez cette vidéo : [Vidéo de démonstration](https://www.youtube.com/watch?v=1SYE76HOQPU)
 
-## Contributeurs
-
-- [Natour-Mazen](https://github.com/Natour-Mazen)
-
 ## Licence
 
 Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de détails.
-
----
-
-N'hésitez pas à modifier et compléter ce README en fonction des spécificités et des besoins de votre projet.
