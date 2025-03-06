@@ -1,7 +1,3 @@
-Voici un exemple de README pour votre projet incluant le lien vers la vidéo de démonstration :
-
----
-
 # Embedded Development Robot EV3
 
 ## Description
